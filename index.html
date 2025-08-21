@@ -21,6 +21,13 @@
       transform: scaleX(-1); /* flip */
     }
 
+    h1 {
+      text-align: center;
+      font-size: 2em;
+      color: hotpink;
+       transform: scaleX(-1); /* flip */
+    }
+      
     .controls {
       padding: 10px 20px;
       z-index: 10;
@@ -81,8 +88,8 @@
   </div>
 
     <header>www.charmedbyk.com</header>
-    <h2>Everything is 8 dollars!</h2>
-    <h2>Buy 5 and get free shipping!</h2>
+    <h1>Everything is 8 dollars!</h1>
+    <h1>Buy 5 and get free shipping!</h1>
     
   <div class="slide">
     <img id="product-img" src="" alt="Product Image">
@@ -152,7 +159,7 @@
     }
 
     function startSlideShow() {
-      slideInterval = setInterval(nextSlide, 10000); // 10 seconds
+      slideInterval = setInterval(nextSlide, 20000); // 20 seconds
     }
 
     function stopSlideShow() {
@@ -163,10 +170,10 @@
       const btn = document.getElementById("playPauseBtn");
       if (playing) {
         stopSlideShow();
-        btn.textContent = "▶️ Play";
+        btn.textContent = "Play";
       } else {
         startSlideShow();
-        btn.textContent = "⏸️ Pause";
+        btn.textContent = "Pause";
       }
       playing = !playing;
     }
