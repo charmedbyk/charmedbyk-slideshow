@@ -1,0 +1,40 @@
+name: Update products.json from Premiere (Playwright)
+
+on:
+  schedule:
+    - cron: "0 2 * * *"   # daily at 02:00 UTC
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  update-products:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright (Chromium)
+        run: npx playwright install --with-deps chromium
+
+      - name: Run scraper
+        env:
+          PREMIERE_STORE_BASE: ${{ secrets.PREMIERE_STORE_BASE }}
+        run: node scripts/scrapePremiere.mjs
+
+      - name: Commit & push (if changed)
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add products.json
+          git commit -m "chore: daily products.json refresh [skip ci]" || echo "No changes to commit"
+          git push
