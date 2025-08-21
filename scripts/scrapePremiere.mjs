@@ -10,14 +10,10 @@ if (!BASE) {
 const DEBUG = process.env.DEBUG_SCRAPER === '1';
 
 function abs(u) { try { return new URL(u, BASE).toString(); } catch { return u; } }
-
 function ensureDir(p) { fs.mkdirSync(p, { recursive: true }); }
+function slugify(s) { return s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, ''); }
 
-function slugify(s) {
-  return s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
-}
-
-// Load categories if present; otherwise scrape the base page
+// Load categories
 let categories = {};
 try {
   categories = JSON.parse(fs.readFileSync('category_links.json', 'utf8'));
@@ -38,53 +34,72 @@ async function saveDebug(page, outDir, label) {
 
 async function gotoReady(page, url) {
   await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
-  // Give the app time to hydrate / fetch products
-  await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {});
-  await page.waitForTimeout(800);
+  await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
+  await page.waitForTimeout(1000);
+}
+
+function mineProductsFromJSON(json) {
+  const out = [];
+  const walk = (v) => {
+    if (!v) return;
+    if (Array.isArray(v)) { v.forEach(walk); return; }
+    if (typeof v === 'object') {
+      // very loose heuristics for product-like nodes
+      const name = v.name || v.title;
+      const img = v.image || v.img || v.thumbnailUrl || v.thumb || v.mainImage;
+      const price = v.price || v.priceValue || v.amount;
+      const url = v.url || v.link || v.href;
+      if (name && (img || price || url)) {
+        out.push({
+          id: v.id || v.sku || v.productId || url || name,
+          title: String(name),
+          price: price ? Number(String(price).replace(/[^0-9.]/g, '')) : null,
+          url: url || '',
+          image: Array.isArray(img) ? img[0] : img || '',
+          available: v.available != null ? !!v.available : true
+        });
+      }
+      Object.values(v).forEach(walk);
+    }
+  };
+  walk(json);
+  return out;
+}
+
+async function extractFromNetwork(recordedJSON) {
+  // De-dupe and return “product‑ish” objects from all captured JSON responses
+  const items = [];
+  for (const j of recordedJSON) items.push(...mineProductsFromJSON(j));
+  // Basic dedupe by (id|title|url)
+  const uniq = new Map();
+  for (const p of items) {
+    const key = p.id || `${p.title}|${p.url}`;
+    if (!uniq.has(key)) uniq.set(key, p);
+  }
+  return Array.from(uniq.values());
 }
 
 async function extractFromLdJson(page) {
-  // Try schema.org JSON-LD: Product or ItemList of Products
   const ldjson = await page.$$eval('script[type="application/ld+json"]', nodes =>
     nodes.map(n => {
       try { return JSON.parse(n.textContent || '{}'); } catch { return null; }
     }).filter(Boolean)
   );
-
-  const items = [];
-  for (const block of ldjson) {
-    const walk = (node) => {
-      if (!node || typeof node !== 'object') return;
-      if (node['@type'] === 'Product' && node.name) {
-        items.push({
-          id: node.sku || node.productID || node.url || node.name,
-          title: node.name,
-          price: node.offers?.price ? Number(node.offers.price) : null,
-          url: node.url || '',
-          image: Array.isArray(node.image) ? node.image[0] : node.image || '',
-          available: node.offers?.availability ? !/OutOfStock/i.test(node.offers.availability) : true
-        });
-      }
-      for (const v of Object.values(node)) {
-        if (Array.isArray(v)) v.forEach(walk); else if (typeof v === 'object') walk(v);
-      }
-    };
-    walk(block);
-  }
-  return items;
+  return mineProductsFromJSON(ldjson);
 }
 
 async function scrapeGridCards(page, current) {
+  // :light() pierces shadow DOM
   const selector = [
-    '[data-product-id]',
-    '.product-card',
-    '.product',
-    '.grid .card',
-    'ul.products li',
-    '.collection .card',
-    '.product-grid .grid__item',
-    '.products .product-item',
-    'li.product, div.product-list-item'
+    ':light([data-product-id])',
+    ':light(.product-card)',
+    ':light(.product)',
+    ':light(.grid .card)',
+    ':light(ul.products li)',
+    ':light(.collection .card)',
+    ':light(.product-grid .grid__item)',
+    ':light(.products .product-item)',
+    ':light(li.product), :light(div.product-list-item)'
   ].join(',');
 
   const handles = await page.locator(selector).elementHandles();
@@ -122,34 +137,42 @@ async function scrapeGridCards(page, current) {
   return items;
 }
 
-async function scrapeCategory(page, name, url, debugBase) {
+async function scrapeCategory(page, name, url, debugBase, recordedJSON) {
   const out = [];
   let current = url;
   let pageNum = 1;
 
   while (true) {
     await gotoReady(page, current);
+    const title = await page.title().catch(() => '');
+    const bodyLen = await page.evaluate(() => document.body?.innerText?.length || 0);
+    if (DEBUG) console.log(`  ${name} p${pageNum} title="${title}" bodyLen=${bodyLen}`);
 
-    // Try JSON-LD first (fast path)
-    let items = await extractFromLdJson(page);
+    // 1) Network‑captured JSON
+    let items = await extractFromNetwork(recordedJSON);
 
-    // Fall back to grid scraping if ld+json sparse/empty
+    // 2) JSON‑LD
     if (items.length < 1) {
+      const ld = await extractFromLdJson(page);
+      items = ld;
+    }
+
+    // 3) DOM grid (with :light() through shadow DOM)
+    if (items.length < 1) {
+      // small extra wait for client rendering
+      await page.waitForTimeout(1200);
       items = await scrapeGridCards(page, current);
     }
 
-    if (DEBUG) console.log(`  ${name} p${pageNum}: ${items.length} items`);
     if (items.length === 0) {
-      // Save artifacts to help debug
       await saveDebug(page, path.join('debug', slugify(name)), `page-${pageNum}`);
     }
 
-    // Attach category
     items.forEach(p => p.category = name);
     out.push(...items);
 
-    // Pagination: next link/button
-    const next = page.locator('a[rel="next"], .pagination .next a, button:has-text("Next"), a:has-text("Next")');
+    // Next page?
+    const next = page.locator(':light(a[rel="next"]), :light(.pagination .next a), :light(button:has-text("Next")), :light(a:has-text("Next"))');
     if (await next.count()) {
       const href = await next.first().getAttribute('href');
       if (href) {
@@ -171,15 +194,30 @@ async function scrapeCategory(page, name, url, debugBase) {
   });
   const context = await browser.newContext({
     userAgent:
-      'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36'
+      'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36',
+    viewport: { width: 1280, height: 1600 }
   });
   const page = await context.newPage();
+
+  // Capture JSON/XHR responses for mining
+  const recordedJSON = [];
+  page.on('response', async (resp) => {
+    try {
+      const ct = resp.headers()['content-type'] || '';
+      if (ct.includes('application/json')) {
+        const data = await resp.json().catch(() => null);
+        if (data) recordedJSON.push(data);
+      }
+    } catch { /* ignore */ }
+  });
 
   const all = [];
   for (const [name, url] of Object.entries(categories)) {
     console.log(`Category: ${name} -> ${url}`);
     try {
-      const items = await scrapeCategory(page, name, url, 'debug');
+      // reset network buffer per category
+      recordedJSON.length = 0;
+      const items = await scrapeCategory(page, name, url, 'debug', recordedJSON);
       console.log(`  ✓ ${items.length} items`);
       all.push(...items);
     } catch (e) {
@@ -204,9 +242,8 @@ async function scrapeCategory(page, name, url, debugBase) {
 
   await browser.close();
 
-  // If nothing was found, make it an error so we notice AND keep artifacts
   if (result.products.length === 0) {
-    console.error("❌ No products found. See debug artifacts for page HTML/screenshots.");
+    console.error("❌ No products found. See debug artifacts for HTML/screenshots.");
     process.exit(2);
   }
 })().catch(err => {
