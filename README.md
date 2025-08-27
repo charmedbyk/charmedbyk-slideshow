@@ -1,6 +1,6 @@
 # charmedbyk-slideshow
 
-[![Update products.json](https://github.com/gotthiskil8/charmedbyk-slideshow/actions/workflows/update-products.yml/badge.svg)](https://github.com/gotthiskil8/charmedbyk-slideshow/actions/workflows/update-products.yml)
+[![Update products.json](https://github.com/charmedbyk/charmedbyk-slideshow/actions/workflows/update-products.yml/badge.svg)](https://github.com/charmedbyk/charmedbyk-slideshow/actions/workflows/update-products.yml)
 
 > Automated product feed + slideshow site for [CharmedByK](https://www.charmedbyk.com)
 
