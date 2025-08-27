@@ -2,8 +2,8 @@ __pycache__/
 *.pyc
 debug/
 .env
-# Ignore all zip files
-*.zip
 
-# But keep anything inside archive/
+# Ignore all zip files except ones in archive/
+*.zip
 !archive/
+!archive/*.zip
