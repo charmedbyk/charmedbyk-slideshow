@@ -1,53 +1,56 @@
-name: Update products.json from Premiere (Playwright)
+name: Update products.json (Python + Selenium)
 
 on:
   schedule:
     - cron: "0 2 * * *"   # daily at 02:00 UTC
-  workflow_dispatch: {}
+  workflow_dispatch: {}    # allow manual runs
 
 permissions:
   contents: write
 
 jobs:
-  update-products:
+  scrape-and-commit:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
         with:
-          node-version: "20"
-          cache: "npm"
+          python-version: "3.11"
 
       - name: Install dependencies
         run: |
-          if [ -f package-lock.json ]; then
-            npm ci
-          else
-            npm install --no-audit --no-fund
-          fi
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
 
-      - name: Install Playwright (Chromium)
-        run: npx playwright install --with-deps chromium
+      # Optional: show versions (helps debugging)
+      - name: Show versions
+        run: |
+          python -c "import sys; print(sys.version)"
+          python -c "import selenium; print('selenium', selenium.__version__)"
 
+      # Run your exact scraper (expects category_links.json in repo root)
       - name: Run scraper
         env:
-          PREMIERE_STORE_BASE: ${{ secrets.PREMIERE_STORE_BASE }}
-          DEBUG_SCRAPER: "1"
-        run: node scripts/scrapePremiere.mjs
+          # Add env vars here if your script needs any
+          # e.g. BASE_URL: ${{ secrets.BASE_URL }}
+          PYTHONUNBUFFERED: "1"
+        run: python Product_Updater.py
 
-      - name: Upload debug artifacts (HTML & screenshots)
+      # Always upload the products file (and any debug folder your script might create)
+      - name: Upload artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: premiere-debug
+          name: products-and-debug
           path: |
-            debug/**
             products.json
-          if-no-files-found: ignore
+            debug/**
+          if-no-files-found: warn
 
+      # Commit and push only if products.json changed
       - name: Commit & push (if changed)
         run: |
           git config user.name  "github-actions[bot]"
