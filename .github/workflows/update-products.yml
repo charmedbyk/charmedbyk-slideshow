@@ -46,7 +46,7 @@ jobs:
         with:
           name: products-and-debug
           path: |
-            products.json
+            docs/products.json
             debug/**
           if-no-files-found: warn
 
