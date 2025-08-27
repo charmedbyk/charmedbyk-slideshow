@@ -22,6 +22,7 @@ It combines:
 
 ## 📂 Repository structure
 
+```
 .
 ├─ .github/workflows/         # CI/CD automation
 │  └─ update-products.yml     # Daily scraper job
@@ -36,8 +37,8 @@ It combines:
 ├─ requirements.txt           # Python dependencies
 ├─ README.md                  # Project documentation
 └─ .gitignore                 # Build/debug ignores
+```
 
----
 
 ## ⚙️ How it works
 
