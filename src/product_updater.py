@@ -5,7 +5,7 @@ import time
 import json
 
 # Load categories
-with open("category_links.json", "r") as f:
+with open("data/category_links.json", "r") as f:
     categories = json.load(f)
 
 def new_driver():
@@ -69,7 +69,7 @@ for category, url in categories.items():
 driver.quit()
 
 # Save to JSON
-with open("products.json", "w", encoding="utf-8") as f:
+with open("docs/products.json", "w", encoding="utf-8") as f:
     json.dump(all_products, f, indent=2)
 
 print(f"✅ Done. Saved {len(all_products)} products.")
