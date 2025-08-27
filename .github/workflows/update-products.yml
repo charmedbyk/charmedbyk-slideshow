@@ -37,7 +37,7 @@ jobs:
           # Add env vars here if your script needs any
           # e.g. BASE_URL: ${{ secrets.BASE_URL }}
           PYTHONUNBUFFERED: "1"
-        run: python src/Product_Updater.py
+        run: python src/product_updater.py
 
       # Always upload the products file (and any debug folder your script might create)
       - name: Upload artifacts
