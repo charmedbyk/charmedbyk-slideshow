@@ -1,18 +1,19 @@
 (async function () {
+  // DOM refs
   const canvas = document.getElementById("wheel");
   const ctx = canvas.getContext("2d");
   const spinBtn = document.getElementById("spin");
   const resultEl = document.getElementById("result");
 
-  // ---- Load prizes from JSON ----
+  // ---- Load prizes from JSON (../ because wheel/ is a sibling of data/) ----
   async function loadPrizes() {
     try {
-      const res = await fetch("./data/wheel_prizes.json", { cache: "no-store" });
+      const res = await fetch("../data/wheel_prizes.json", { cache: "no-store" });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       /** @type {{label:string, count:number}[]} */
       const spec = await res.json();
 
-      // Expand weighted entries into individual slices
+      // Expand weights into individual slices
       const expanded = [];
       for (const { label, count } of spec) {
         for (let i = 0; i < count; i++) expanded.push(label);
@@ -27,16 +28,22 @@
 
   const prizes = await loadPrizes();
 
-  // ---- Wheel drawing state ----
+  // ---- Wheel geometry/state ----
   const size = canvas.width;
   const center = size / 2;
   const slices = prizes.length;
-  const anglePerSlice = (Math.PI * 2) / slices;
-  const colors = Array.from({ length: slices }, (_, i) => (i % 2 ? "#ffd3ea" : "#ffe9f4"));
+  const TAU = Math.PI * 2;
+  const anglePerSlice = TAU / slices;
 
-  // Start with pointer pointing "up"
-  let currentAngle = -Math.PI / 2;
+  // Center a slice at the pointer (12 o’clock): base angle at top minus half-slice
+  const baseAtTop = -Math.PI / 2 - anglePerSlice / 2;
+
+  // Start so that a slice center is already at the pointer
+  let currentAngle = baseAtTop;
   let isSpinning = false;
+
+  // Pretty alternating colors
+  const colors = Array.from({ length: slices }, (_, i) => (i % 2 ? "#ffd3ea" : "#ffe9f4"));
 
   function drawWheel() {
     ctx.clearRect(0, 0, size, size);
@@ -57,7 +64,7 @@
       ctx.fill();
     }
 
-    // Labels (will appear mirrored because the entire canvas is CSS-flipped)
+    // Labels (canvas is CSS-flipped, so text appears mirrored as desired)
     ctx.save();
     ctx.translate(center, center);
     ctx.rotate(currentAngle);
@@ -77,7 +84,7 @@
     ctx.beginPath();
     ctx.lineWidth = 6;
     ctx.strokeStyle = "#ff4fa3";
-    ctx.arc(center, center, center - 6, 0, Math.PI * 2);
+    ctx.arc(center, center, center - 6, 0, TAU);
     ctx.stroke();
   }
 
@@ -96,16 +103,36 @@
     if (isSpinning) return;
     isSpinning = true;
     spinBtn.disabled = true;
-    resultEl.textContent = "";
 
-    const extraTurns = 4 + Math.floor(Math.random() * 3); // 4–6 turns
+    // Reset result area (optional big style)
+    if (resultEl) {
+      resultEl.textContent = "";
+      resultEl.classList.remove("win");
+    }
+
+    // Normalize current angle to [0, TAU)
+    currentAngle = ((currentAngle % TAU) + TAU) % TAU;
+
+    // Pick a target slice index
     const targetSlice = Math.floor(Math.random() * slices);
-    const finalAngle = -Math.PI / 2 - targetSlice * anglePerSlice; // pointer at top
 
-    const target = finalAngle - extraTurns * Math.PI * 2;
-    const duration = 3200;
+    // Aim the CENTER of that slice to the pointer at 12 o'clock
+    const finalAngle = baseAtTop - targetSlice * anglePerSlice;
+
+    // Force a large spin: 6–8 full rotations
+    const MIN_TURNS = 6;
+    const EXTRA_TURNS_RANGE = 2; // 0..2 → 6..8 total
+    const totalTurns = MIN_TURNS + Math.floor(Math.random() * (EXTRA_TURNS_RANGE + 1));
+
+    // Target angle far behind, so animation will spin forward through many turns
+    const target = finalAngle - totalTurns * TAU;
+
+    // Duration scales slightly with distance to feel natural
+    const distance = Math.abs(target - currentAngle);
+    const duration = 2800 + (distance / TAU) * 250; // ~2.8–3.4s typical
     const start = performance.now();
     const startAngle = currentAngle;
+
     const easeOutCubic = (t) => 1 - Math.pow(1 - t, 3);
 
     function frame(now) {
@@ -121,10 +148,14 @@
         isSpinning = false;
         spinBtn.disabled = false;
         const prize = prizes[targetSlice];
-        resultEl.textContent = `You won: ${prize}!`;
+        if (resultEl) {
+          resultEl.textContent = `You won: ${prize}!`;
+          resultEl.classList.add("win"); // make it large/pink if CSS provided
+        }
         launchConfetti();
       }
     }
+
     requestAnimationFrame(frame);
   }
 
