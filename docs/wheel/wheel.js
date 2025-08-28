@@ -97,6 +97,7 @@
     isSpinning = true;
     spinBtn.disabled = true;
     resultEl.textContent = "";
+    resultEl.classList.remove("win");  // reset size
 
     const extraTurns = 4 + Math.floor(Math.random() * 3); // 4–6 turns
     const targetSlice = Math.floor(Math.random() * slices);
@@ -123,6 +124,7 @@
         spinBtn.disabled = false;
         const prize = prizes[targetSlice];
         resultEl.textContent = `You won: ${prize}!`;
+        resultEl.classList.add("win");   // make it bigger
         launchConfetti();
       }
     }
