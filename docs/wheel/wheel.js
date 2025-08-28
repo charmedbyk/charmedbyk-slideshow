@@ -99,7 +99,7 @@
 
       // Labels: keep them horizontal relative to the page
       ctx.fillStyle = "#111";
-      ctx.font = "bold 32px system-ui, -apple-system, Segoe UI, Arial";
+      ctx.font = "bold 64px system-ui, -apple-system, Segoe UI, Arial";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       const textRadius = center - 32;
