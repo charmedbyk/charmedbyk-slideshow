@@ -49,6 +49,18 @@
       margin-right: 5px;
     }
 
+    .buttons a {
+      font-size: 1em;
+      padding: 6px 10px;
+      margin-right: 5px;
+      display: inline-block;
+      background: #eee;      /* match button bg if you have one */
+      color: #000;           /* match button text */
+      text-decoration: none;
+      border: 1px solid #ccc;/* optional, to mimic button border */
+      border-radius: 4px;    /* optional, to match button shape */
+}
+
     .slide {
       display: flex;
       flex-direction: column;
@@ -84,6 +96,7 @@
     <div class="buttons">
       <button onclick="prevSlide()">Last</button>
       <button onclick="togglePlayPause()" id="playPauseBtn">Pause</button>
+      <a href="./wheel/wheel.html" class="btn">🎡 Spin the Prize Wheel</a>
     </div>
   </div>
 
