@@ -23,15 +23,10 @@
     let currentAngle = 0;
     let isSpinning = false;
 
-    // Highlight state
-    let highlightedIndex = -1;
-    let highlightStart = 0;       // performance.now() when highlight begins
-    const HIGHLIGHT_MS = 1200;    // pulse duration
-
     (async function boot() {
       const expanded = await loadPrizesWithFallback("../data/wheel_prizes.json");
       prizes = arrangeNoAdj(expanded);
-      // random rotate the ring so it isn't predictable
+      // random rotate so the ring doesn't always start the same
       prizes = rotateArray(prizes, Math.floor(Math.random() * prizes.length));
 
       slices = prizes.length;
@@ -53,7 +48,7 @@
         return expandSpec(spec);
       } catch (e) {
         console.warn("[wheel] JSON load failed; using defaults.", e);
-        // Fallback (your current intended mix)
+        // Fallback to your current intended mix
         return ["$80", "$64", "$48", "$48", "$32", "$32", "$16", "$16", "$16", "$8"];
       }
     }
@@ -69,12 +64,20 @@
       return out;
     }
 
-    // ---------- arrangement (no adjacent duplicates in a ring) ----------
+    // ---------- arrangement ----------
     function arrangeNoAdj(items) {
       const n = items.length;
+      // Count frequencies
       const counts = new Map();
       for (const v of items) counts.set(v, (counts.get(v) || 0) + 1);
 
+      // Quick feasibility check: maxCount <= floor(n/2) for circular no-adj
+      const maxCount = Math.max(...counts.values());
+      if (maxCount > Math.floor(n / 2)) {
+        console.warn("[wheel] High frequency may force adjacency; proceeding best-effort.");
+      }
+
+      // 1) Greedy spacing: place most frequent labels at even indices, then fill odds.
       const labels = [...counts.keys()].sort((a, b) => counts.get(b) - counts.get(a));
       const result = new Array(n).fill(null);
 
@@ -88,16 +91,21 @@
         }
       }
 
+      // If any nulls remain (shouldn't), fill them randomly with leftover items
+      for (let i = 0; i < n; i++) if (result[i] == null) result[i] = items[i % items.length];
+
+      // If still adjacent duplicates (including wrap), patch with randomized retries
       if (!isValidRing(result)) {
         const fixed = tryRandomizeNoAdj(items, 4000);
-        return fixed || result;
+        if (fixed) return fixed;
       }
       return result;
     }
 
     function isValidRing(arr) {
       for (let i = 0; i < arr.length; i++) {
-        if (arr[i] === arr[(i + 1) % arr.length]) return false;
+        const a = arr[i], b = arr[(i + 1) % arr.length];
+        if (a === b) return false;
       }
       return true;
     }
@@ -107,13 +115,14 @@
       for (let t = 0; t < attempts; t++) {
         shuffle(arr);
         if (isValidRing(arr)) return arr.slice();
+        // small local repair: swap random pair and check
         const i = (Math.random() * arr.length) | 0;
         const j = (Math.random() * arr.length) | 0;
         [arr[i], arr[j]] = [arr[j], arr[i]];
         if (isValidRing(arr)) return arr.slice();
       }
-      console.warn("[wheel] Could not get perfect no-adj; using best-effort.");
-      return null;
+      console.warn("[wheel] Could not find perfect no-adj ring after retries; using best-effort.");
+      return arr.slice();
     }
 
     function rotateArray(arr, k) {
@@ -131,95 +140,44 @@
     }
 
     // ---------- drawing ----------
-    function drawWheel(now = performance.now()) {
+    function drawWheel() {
       ctx.clearRect(0, 0, size, size);
-
-      // Optional pulse for highlight
-      let pulse = 1;
-      if (highlightedIndex >= 0) {
-        const t = Math.min(1, (now - highlightStart) / HIGHLIGHT_MS);
-        // gentle pulse 0..1 → 1..1.1..1 scale
-        pulse = 1 + 0.1 * Math.sin(t * Math.PI);
-      }
 
       // Wedges
       for (let i = 0; i < slices; i++) {
-        const a0 = currentAngle + i * anglePerSlice;
-        const a1 = a0 + anglePerSlice;
-
         ctx.beginPath();
         ctx.moveTo(center, center);
-
-        // Fill color (brighter if highlighted)
-        if (i === highlightedIndex) {
-          const grad = ctx.createRadialGradient(center, center, center * 0.2, center, center, center - 6);
-          grad.addColorStop(0, "#fff3fb");
-          grad.addColorStop(1, "#ffd7ee");
-          ctx.fillStyle = grad;
-        } else {
-          ctx.fillStyle = i % 2 ? "#ffd3ea" : "#ffe9f4";
-        }
-
-        ctx.arc(center, center, center - 6, a0, a1);
+        ctx.fillStyle = i % 2 ? "#ffd3ea" : "#ffe9f4";
+        ctx.arc(
+          center,
+          center,
+          center - 6,
+          currentAngle + i * anglePerSlice,
+          currentAngle + (i + 1) * anglePerSlice
+        );
         ctx.closePath();
         ctx.fill();
       }
 
-      // Outer rim
+      // Rim
       ctx.beginPath();
       ctx.lineWidth = 6;
       ctx.strokeStyle = "#ff4fa3";
       ctx.arc(center, center, center - 6, 0, TAU);
       ctx.stroke();
 
-      // Glowing arc on highlighted slice (subtle)
-      if (highlightedIndex >= 0) {
-        const a0 = currentAngle + highlightedIndex * anglePerSlice;
-        const a1 = a0 + anglePerSlice;
-        ctx.save();
-        ctx.shadowColor = "rgba(255,79,163,0.9)";
-        ctx.shadowBlur = 18 * pulse;
-        ctx.strokeStyle = "rgba(255,79,163,0.9)";
-        ctx.lineWidth = 8 * pulse;
-        ctx.beginPath();
-        ctx.arc(center, center, center - 6, a0 + 0.02, a1 - 0.02);
-        ctx.stroke();
-        ctx.restore();
-      }
-
-      // Labels: horizontal (canvas is CSS-mirrored in your HTML)
-      const baseFont = 28;               // regular label size
-      const bigFont = Math.round(baseFont * (1.12 * pulse)); // highlighted bump
-      const textRadius = center - 32;
-
+      // Labels: horizontal relative to page (canvas is CSS-mirrored in your HTML)
+      ctx.fillStyle = "#111";
+      ctx.font = "bold 28px system-ui, -apple-system, Segoe UI, Arial";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
+      const textRadius = center - 32;
 
       for (let i = 0; i < slices; i++) {
-        const mid = currentAngle + i * anglePerSlice + anglePerSlice / 2;
-        const x = center + textRadius * Math.cos(mid);
-        const y = center + textRadius * Math.sin(mid);
-
-        const isHit = i === highlightedIndex;
-
-        // Outline for readability on highlight
-        if (isHit) {
-          ctx.font = `900 ${bigFont}px system-ui, -apple-system, Segoe UI, Arial`;
-          ctx.lineWidth = 6;
-          ctx.strokeStyle = "white";
-          ctx.strokeText(prizes[i], x, y);
-          ctx.fillStyle = "#ff4fa3"; // pink
-          ctx.fillText(prizes[i], x, y);
-        } else {
-          ctx.font = `bold ${baseFont}px system-ui, -apple-system, Segoe UI, Arial`;
-          ctx.fillStyle = "#111";
-          ctx.fillText(prizes[i], x, y);
-        }
-      }
-
-      // If we're in highlight pulse window, keep redrawing for the effect
-      if (highlightedIndex >= 0 && now - highlightStart < HIGHLIGHT_MS) {
-        requestAnimationFrame(drawWheel);
+        const midAngle = currentAngle + i * anglePerSlice + anglePerSlice / 2;
+        const x = center + textRadius * Math.cos(midAngle);
+        const y = center + textRadius * Math.sin(midAngle);
+        ctx.fillText(prizes[i], x, y);
       }
     }
 
@@ -243,7 +201,6 @@
         resultEl.textContent = "";
         resultEl.classList.remove("win");
       }
-      highlightedIndex = -1; // clear old highlight
 
       // normalize
       currentAngle = ((currentAngle % TAU) + TAU) % TAU;
@@ -271,19 +228,13 @@
         const t = Math.min(1, elapsed / duration);
         const eased = easeOutCubic(t);
         currentAngle = startAngle + (target - startAngle) * eased;
-        drawWheel(now);
+        drawWheel();
 
         if (t < 1) {
           requestAnimationFrame(frame);
         } else {
           isSpinning = false;
           if (spinBtn) spinBtn.disabled = false;
-
-          // Set highlight state and animate pulse
-          highlightedIndex = targetSlice;
-          highlightStart = performance.now();
-          drawWheel(); // kick off pulse frames
-
           const prize = prizes[targetSlice];
           if (resultEl) {
             resultEl.textContent = `You won: ${prize}!`;
