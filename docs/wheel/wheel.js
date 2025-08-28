@@ -168,7 +168,7 @@
 
       // Labels: horizontal relative to page (canvas is CSS-mirrored in your HTML)
       ctx.fillStyle = "#111";
-      ctx.font = "bold 28px system-ui, -apple-system, Segoe UI, Arial";
+      ctx.font = "bold 24px system-ui, -apple-system, Segoe UI, Arial";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       const textRadius = center - 32;
