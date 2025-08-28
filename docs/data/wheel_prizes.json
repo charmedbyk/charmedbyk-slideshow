@@ -1,7 +1,8 @@
 [
   { "label": "$80", "count": 1 },
-  { "label": "$64", "count": 2 },
+  { "label": "$64", "count": 1 },
   { "label": "$48", "count": 2 },
   { "label": "$32", "count": 2 },
-  { "label": "$16", "count": 3 }
+  { "label": "$16", "count": 3 },
+  { "label": "$8",  "count": 1 }
 ]
