@@ -24,12 +24,9 @@
     let isSpinning = false;
 
     (async function boot() {
-      prizes = await loadPrizesWithFallback("../data/wheel_prizes.json");
-
-      // Arrange to avoid adjacent duplicates (circularly)
-      prizes = arrangeCircular(prizes);
-
-      // Random rotate the arrangement so it's not predictable
+      const expanded = await loadPrizesWithFallback("../data/wheel_prizes.json");
+      prizes = arrangeNoAdj(expanded);
+      // random rotate so the ring doesn't always start the same
       prizes = rotateArray(prizes, Math.floor(Math.random() * prizes.length));
 
       slices = prizes.length;
@@ -45,17 +42,14 @@
     async function loadPrizesWithFallback(url) {
       try {
         const res = await fetch(url, { cache: "no-store" });
-        if (!res.ok) {
-          const body = await res.text().catch(() => "");
-          console.warn(`[wheel] JSON fetch failed ${res.status}:`, body);
-          return defaultExpanded();
-        }
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
         /** @type {{label:string,count:number}[]} */
         const spec = await res.json();
         return expandSpec(spec);
       } catch (e) {
-        console.warn("[wheel] JSON fetch/parse error; using defaults.", e);
-        return defaultExpanded();
+        console.warn("[wheel] JSON load failed; using defaults.", e);
+        // Fallback to your current intended mix
+        return ["$80", "$64", "$48", "$48", "$32", "$32", "$16", "$16", "$16", "$8"];
       }
     }
 
@@ -70,27 +64,24 @@
       return out;
     }
 
-    function defaultExpanded() {
-      // Fallback to your new intended mix
-      return ["$80", "$64", "$48", "$48", "$32", "$32", "$16", "$16", "$16", "$8"];
-    }
-
-    // ---------- arrangement helpers ----------
-    function arrangeCircular(items) {
-      // Goal: no two identical labels adjacent, including last↔first (circular).
-      // Strategy: like "reorganize string" — place most frequent labels at even indices, then fill odds.
+    // ---------- arrangement ----------
+    function arrangeNoAdj(items) {
       const n = items.length;
+      // Count frequencies
       const counts = new Map();
       for (const v of items) counts.set(v, (counts.get(v) || 0) + 1);
 
-      // Shuffle labels for variety, then sort by count desc
-      const labels = [...counts.keys()];
-      shuffle(labels);
-      labels.sort((a, b) => counts.get(b) - counts.get(a));
+      // Quick feasibility check: maxCount <= floor(n/2) for circular no-adj
+      const maxCount = Math.max(...counts.values());
+      if (maxCount > Math.floor(n / 2)) {
+        console.warn("[wheel] High frequency may force adjacency; proceeding best-effort.");
+      }
 
-      const result = new Array(n);
+      // 1) Greedy spacing: place most frequent labels at even indices, then fill odds.
+      const labels = [...counts.keys()].sort((a, b) => counts.get(b) - counts.get(a));
+      const result = new Array(n).fill(null);
+
       let idx = 0;
-
       for (const label of labels) {
         let c = counts.get(label);
         while (c-- > 0) {
@@ -100,26 +91,38 @@
         }
       }
 
-      // If the first and last ended up equal (rare), swap last with next spot that fixes it
-      if (n > 2 && result[0] === result[n - 1]) {
-        for (let i = 1; i < n - 1; i++) {
-          if (result[i] !== result[0] && result[i - 1] !== result[n - 1]) {
-            [result[i], result[n - 1]] = [result[n - 1], result[i]];
-            break;
-          }
-        }
-      }
+      // If any nulls remain (shouldn't), fill them randomly with leftover items
+      for (let i = 0; i < n; i++) if (result[i] == null) result[i] = items[i % items.length];
 
-      // Final safety check (should be clean for your counts)
-      for (let i = 0; i < n; i++) {
-        const a = result[i];
-        const b = result[(i + 1) % n];
-        if (a === b) {
-          // Fallback: simple reshuffle+retry (extremely unlikely for your mix)
-          return arrangeCircular(simpleShuffle(items));
-        }
+      // If still adjacent duplicates (including wrap), patch with randomized retries
+      if (!isValidRing(result)) {
+        const fixed = tryRandomizeNoAdj(items, 4000);
+        if (fixed) return fixed;
       }
       return result;
+    }
+
+    function isValidRing(arr) {
+      for (let i = 0; i < arr.length; i++) {
+        const a = arr[i], b = arr[(i + 1) % arr.length];
+        if (a === b) return false;
+      }
+      return true;
+    }
+
+    function tryRandomizeNoAdj(items, attempts = 2000) {
+      const arr = items.slice();
+      for (let t = 0; t < attempts; t++) {
+        shuffle(arr);
+        if (isValidRing(arr)) return arr.slice();
+        // small local repair: swap random pair and check
+        const i = (Math.random() * arr.length) | 0;
+        const j = (Math.random() * arr.length) | 0;
+        [arr[i], arr[j]] = [arr[j], arr[i]];
+        if (isValidRing(arr)) return arr.slice();
+      }
+      console.warn("[wheel] Could not find perfect no-adj ring after retries; using best-effort.");
+      return arr.slice();
     }
 
     function rotateArray(arr, k) {
@@ -129,17 +132,11 @@
     }
 
     function shuffle(arr) {
-      // in-place Fisher–Yates
       for (let i = arr.length - 1; i > 0; i--) {
         const j = (Math.random() * (i + 1)) | 0;
         [arr[i], arr[j]] = [arr[j], arr[i]];
       }
       return arr;
-    }
-
-    function simpleShuffle(arr) {
-      const copy = arr.slice();
-      return shuffle(copy);
     }
 
     // ---------- drawing ----------
@@ -171,7 +168,7 @@
 
       // Labels: horizontal relative to page (canvas is CSS-mirrored in your HTML)
       ctx.fillStyle = "#111";
-      ctx.font = "bold 64px system-ui, -apple-system, Segoe UI, Arial"; // bigger numbers
+      ctx.font = "bold 28px system-ui, -apple-system, Segoe UI, Arial";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       const textRadius = center - 32;
