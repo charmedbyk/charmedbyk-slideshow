@@ -100,8 +100,7 @@
 
     const extraTurns = 4 + Math.floor(Math.random() * 3); // 4–6 turns
     const targetSlice = Math.floor(Math.random() * slices);
-    //const finalAngle = -Math.PI / 2 - targetSlice * anglePerSlice; // pointer at top
-    const finalAngel = baseAtTop - targetSlice * anglePerSlice;
+    const finalAngle = -Math.PI / 2 - targetSlice * anglePerSlice; // pointer at top
 
     const target = finalAngle - extraTurns * Math.PI * 2;
     const duration = 3200;
