@@ -21,7 +21,7 @@
       return expanded;
     } catch (e) {
       console.warn("Failed to load wheel_prizes.json, using defaults:", e);
-      return ["$80", "$64", "$64", "$48", "$48", "$32", "$32", "$16", "$16", "$16"];
+      return ["$64", "$48", "$48", "$40", "$32", "$16", "$16", "$16", "$8", "$8"];
     }
   }
 
